@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Script se Video Edit Prompts</title>
+<style>
+:root{--bg:#0F172A;--card:#1E293B;--acc:#8B5CF6;--txt:#F8FAFC;--mut:#CBD5E1;--in:#0B1222;--ok:#4ADE80;--bad:#F87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,Arial,sans-serif;padding:14px}
+.wrap{max-width:680px;margin:0 auto}
+h1{font-size:20px;margin:6px 0 12px}
+h2{font-size:16px;margin:0 0 8px}
+.card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:12px}
+textarea{width:100%;min-height:150px;padding:10px;border-radius:10px;border:1px solid #334155;background:var(--in);color:var(--txt);font-size:15px;font-family:inherit}
+button{background:var(--acc);color:#fff;border:0;border-radius:12px;padding:12px 14px;font-size:15px;cursor:pointer;margin:4px 0;width:100%}
+button.sec{background:#334155;width:auto;padding:8px 12px;font-size:14px}
+button.rec{background:#DC2626}
+pre{white-space:pre-wrap;background:var(--in);padding:10px;border-radius:10px;font-size:13px;max-height:260px;overflow:auto;margin:8px 0;color:var(--txt)}
+.muted{color:var(--mut);font-size:13px}
+.tag{display:inline-block;background:#334155;border-radius:20px;padding:4px 10px;margin:3px;font-size:13px}
+.hide{display:none}
+.timer{font-size:22px;font-weight:700;margin:6px 0}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.line{padding:6px 8px;background:var(--in);border-radius:8px;margin:4px 0;font-size:14px}
+.interim{padding:6px 8px;color:#A5B4FC;font-size:14px;min-height:24px}
+audio{width:100%;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Script se Video Edit Prompts</h1>
+
+  <!-- STEP 1: VOICE -->
+  <div class="card">
+    <h2>Step 1: Voice dalo</h2>
+    <button onclick="$('audioIn').click()">Audio file chuno (gallery)</button>
+    <input type="file" id="audioIn" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" style="display:none">
+    <div id="fileInfo" class="muted">Koi file nahi chuni gayi</div>
+    <audio id="audioEl" controls></audio>
+    <p class="muted" style="margin-top:10px">Ya seedha bolkar record karo (Hindi). Chrome mein mic permission dena hogi.</p>
+  </div>
+
+  <!-- STEP 2: TRANSCRIBE -->
+  <div class="card">
+    <h2>Step 2: Transcribe karo</h2>
+    <button id="trBtn" onclick="toggleTranscribe()">Transcribe karo</button>
+    <div class="timer">Time spent: <span id="elapsed">0:00</span></div>
+    <div id="trStatus" class="muted">Abhi shuru nahi hua</div>
+    <div id="trResult" style="margin-top:8px"></div>
+    <div id="interim" class="interim"></div>
+    <p class="muted">File chuni hai to "Transcribe karo" dabane par audio chalega aur mic usse sunkar likhega. Shaant jagah par karo aur phone ka volume thoda badhao.</p>
+  </div>
+
+  <!-- STEP 3: SCRIPT + PROMPT -->
+  <div class="card">
+    <h2>Step 3: Script check karo</h2>
+    <textarea id="script" placeholder="Transcript yahan aayega. Aap edit bhi kar sakte ho, ya script seedha paste karo." oninput="analyze()"></textarea>
+    <div class="muted" style="margin-top:6px">Topic: <span id="topic">-</span></div>
+    <div id="kws" style="margin-top:6px">-</div>
+    <button onclick="build()">Prompt banao</button>
+  </div>
+
+  <div id="out" class="hide">
+    <div class="card">
+      <h2>Prompt 1: Script analysis aur scene plan</h2>
+      <pre id="p1"></pre>
+      <button class="sec" onclick="copy('p1')">Copy</button>
+    </div>
+    <div class="card">
+      <h2>Prompt 2: Editing instructions</h2>
+      <pre id="p2"></pre>
+      <button class="sec" onclick="copy('p2')">Copy</button>
+    </div>
+    <div class="card">
+      <h2>Prompt 3: Icons aur animation list</h2>
+      <pre id="p3"></pre>
+      <button class="sec" onclick="copy('p3')">Copy</button>
+    </div>
+    <div class="card muted">
+      Model: free plan mein <b>Claude Haiku 5.5</b> chuniye. Teeno prompts ek-ek karke alag message mein paste karo. Video ko CapCut ya InShot mein edit karo.
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const $$ = id => document.getElementById(id);
+const STOP=['hai','ka','ki','ke','ko','se','aur','the','is','yeh','ye','woh','wo','mein','main','ho','kar','hain','to','par','ek','bhi','nahi','kya','tha','thi','ab','a','of','and'];
+const fmt = s => { s=Math.floor(s); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const S = {rec:null, recording:false, startAt:0, timer:null, lines:[], fileLoaded:false, audioUrl:null};
+
+/* ---------- file picker ---------- */
+$('audioIn').addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(!f){ return; }
+  if(S.audioUrl) URL.revokeObjectURL(S.audioUrl);
+  S.audioUrl = URL.createObjectURL(f);
+  $('audioEl').src = S.audioUrl;
+  $('fileInfo').textContent = 'File: ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)';
+  S.fileLoaded = true;
+});
+
+/* ---------- transcription ---------- */
+function startListening(){
+  if(!SR){
+    $('trStatus').innerHTML = '<span class="bad">Yeh browser transcription support nahi karta. Chrome mein kholo.</span>';
+    return false;
+  }
+  const r = new SR();
+  r.lang = 'hi-IN';
+  r.continuous = true;
+  r.interimResults = true;     // words appear while you speak
+  r.onresult = ev => {
+    let interimText = '';
+    for(let i = ev.resultIndex; i < ev.results.length; i++){
+      const res = ev.results[i];
+      if(res.isFinal){
+        const t = S.elapsedNow();
+        const text = res[0].transcript.trim();
+        if(text){ S.lines.push('[' + fmt(t) + '] ' + text); }
+        renderLines();
+      } else {
+        interimText += res[0].transcript;
+      }
+    }
+    $('interim').textContent = interimText;
+  };
+  r.onend = () => { if(S.recording && S.rec === r){ try{ r.start(); }catch(e){} } };
+  r.onerror = e => {
+    if(e.error === 'no-speech') return;
+    $('trStatus').innerHTML = '<span class="bad">Error: ' + e.error + '. Mic permission check karo.</span>';
+  };
+  r.start();
+  S.rec = r;
+  return true;
+}
+
+S.elapsedNow = () => (Date.now() - S.startAt) / 1000;
+
+function toggleTranscribe(){
+  if(S.recording){ stopTranscribe(); return; }
+  S.lines = []; renderLines(); $('interim').textContent = '';
+  S.startAt = Date.now();
+  S.recording = true;
+  if(S.fileLoaded){
+    $('audioEl').currentTime = 0;
+    $('audioEl').play().catch(()=>{});
+    // when the file ends, stop automatically
+    $('audioEl').onended = () => { if(S.recording) stopTranscribe(); };
+  }
+  if(!startListening()){ S.recording = false; return; }
+  $('trBtn').textContent = 'Ruko (transcribe complete)';
+  $('trBtn').classList.add('rec');
+  $('trStatus').textContent = 'Transcribe ho raha hai...';
+  S.timer = setInterval(() => { $('elapsed').textContent = fmt(S.elapsedNow()); }, 500);
+}
+
+function stopTranscribe(){
+  S.recording = false;
+  if(S.rec){ const r = S.rec; S.rec = null; try{ r.stop(); }catch(e){} }
+  if(S.fileLoaded){ $('audioEl').pause(); }
+  clearInterval(S.timer);
+  const total = S.elapsedNow();
+  $('elapsed').textContent = fmt(total);
+  $('trBtn').textContent = 'Transcribe karo (dobara)';
+  $('trBtn').classList.remove('rec');
+  $('interim').textContent = '';
+  $('trStatus').innerHTML = '<span class="ok">Transcribe complete. Time spent: ' + fmt(total) + ' (' + Math.round(total) + ' sec)</span>';
+  if(S.lines.length){
+    $('script').value = S.lines.join('\n');
+    analyze();
+  } else {
+    $('trStatus').innerHTML += '<br><span class="muted">Koi text nahi aaya. Script box mein seedha paste kar sakte ho.</span>';
+  }
+}
+
+function renderLines(){
+  $('trResult').innerHTML = S.lines.map(l => '<div class="line">' + l.replace(/</g,'&lt;') + '</div>').join('');
+}
+
+/* ---------- analysis ---------- */
+function detectTopic(t){
+  t = t.toLowerCase();
+  const map = {Finance:['paisa','paise','rupee','rupya','bank','loan','investment','budget','bachat','finance'],
+    Health:['health','sehat','diabetes','sugar','doctor','dawai','medicine','fitness','exercise'],
+    Cooking:['biryani','recipe','khana','cook','masala','roti','sabzi','kitchen'],
+    Technology:['folder','download','app','phone','computer','laptop','software','internet','ai','tech'],
+    Education:['padhai','exam','study','school','course','class','padh','teacher','student']};
+  const words = t.split(/[^a-z\u0900-\u097F]+/);
+  let best = 'General', score = 0;
+  for(const k in map){ const c = map[k].filter(w => words.includes(w)).length; if(c > score){ score = c; best = k; } }
+  return best;
+}
+function keywords(t){
+  const c = {};
+  t.toLowerCase().replace(/\[\d+:\d+\]/g,' ').split(/[^a-z\u0900-\u097F0-9]+/).forEach(w => {
+    if(w.length < 3 || STOP.includes(w)) return;
+    c[w] = (c[w] || 0) + 1;
+  });
+  return Object.entries(c).sort((a,b) => b[1] - a[1]).slice(0,12).map(e => e[0]);
+}
+function analyze(){
+  const t = $('script').value;
+  if(!t.trim()){ $('topic').textContent = '-'; $('kws').textContent = '-'; return; }
+  $('topic').textContent = detectTopic(t);
+  $('kws').innerHTML = keywords(t).map(k => '<span class="tag">' + k + '</span>').join('');
+}
+
+/* ---------- prompts ---------- */
+function build(){
+  const script = $('script').value.trim();
+  if(!script){ alert('Pehle transcript ya script daalo'); return; }
+  const topic = detectTopic(script), kws = keywords(script).join(', ');
+  $('p1').textContent =
+`Main ek video ki script de raha hoon. Topic: ${topic}. Keywords: ${kws}.
+Script:
+"""
+${script}
+"""
+Is script ka scene-by-scene plan banao. Har scene ke liye: scene number, approximate time, kya dikhana hai, aur hook/intro/body/CTA alag batao. Chhota aur seedha jawab do. Hinglish mein likho.`;
+
+  $('p2').textContent =
+`Upar wali script ke hisab se video editing instructions do (topic: ${topic}).
+Har scene ke liye:
+1. Cut points (kahan video kaatna hai)
+2. Text overlay (script ke exact words, short form mein)
+3. Background music ka mood (soft, upbeat, ya silent)
+4. Transition (fade, zoom, ya cut)
+5. Voice setting: noise kam karo, volume badhao, halki clarity do
+Output numbered list mein do, bina extra explanation ke.`;
+
+  $('p3').textContent =
+`Script: ${topic} topic ka. Keywords: ${kws}.
+Har keyword ke liye ek simple soft 3D icon idea do (transparent PNG style). Phir batao kaun sa animation kab chalega:
+- Time ke word par clock ki sui ghoome
+- Number par count-up
+- Chat/AI ke word par typing effect
+- App ya website ke naam par pop-up
+- Files ke word par folder mein udte hue jaana
+Har line format mein do: [timestamp] keyword | icon | animation
+Script:
+"""
+${script}
+"""`;
+
+  $('out').classList.remove('hide');
+  $('out').scrollIntoView({behavior:'smooth'});
+}
+function copy(id){
+  navigator.clipboard.writeText($(id).textContent)
+    .then(() => alert('Copy ho gaya, ab cloud AI chat mein paste karo'))
+    .catch(() => alert('Copy nahi hua, text select karke copy karo'));
+}
+</script>
+</body>
+</html>
