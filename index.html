@@ -40,7 +40,7 @@ pre{white-space:pre-wrap;background:var(--in);padding:10px;border-radius:10px;fo
       <button class="sec" data-copy="p1">Copy</button>
     </div>
     <div class="card">
-      <h2>Prompt 2: Editing instructions</h2>
+      <h2>Prompt 2: Preview artifact</h2>
       <pre id="p2"></pre>
       <button class="sec" data-copy="p2">Copy</button>
     </div>
@@ -49,7 +49,7 @@ pre{white-space:pre-wrap;background:var(--in);padding:10px;border-radius:10px;fo
       1. Ek video ke liye <b>nayi chat</b> kholo, model <b>Haiku 5.5</b> chuno.<br>
       2. Prompt 1 wahan paste karo, jawab aane do.<br>
       3. Usi chat mein Prompt 2 paste karo, aur model <b>Sonnet 5.5</b> chuno. Limit khatam ho to Haiku par wapas jao.<br>
-      4. Plan ke hisab se CapCut ya InShot mein video edit karo.
+      4. Artifact mein Play dabao, aur screen record karo.
     </div>
   </div>
 </div>
@@ -109,14 +109,13 @@ Is script ka scene-by-scene plan banao. Har scene ke liye: scene number, approxi
 ${STYLE}`;
 
   $('p2').textContent =
-`Upar wali script ke scene plan ke hisab se video editing instructions do.
-Har scene ke liye:
-1. Cut points (kahan kaatna hai)
-2. Text overlay (script ke short words)
-3. Background music ka mood (soft, upbeat, ya silent)
-4. Transition (fade, zoom, ya cut)
-5. Voice setting: noise kam karo, volume badhao, halki clarity do
-Numbered list mein do, bina extra explanation ke.
+`Upar wali script aur scene plan ke hisab se ek single self-contained HTML artifact banao, jo mobile preview ho (9:16 frame).
+Zaroori:
+- Play/Pause button, aur scenes timestamp ke hisab se chalein.
+- Har scene mein topic ke hisab se background, neeche captions (script ke exact shabd, awaaz ke saath sync).
+- Icons CSS se banao (soft 3D gradient circles), emoji nahi.
+- Animation: naam par pop-up bounce, time par ghadi ki sui ghoomegi, number par count-up, chat/AI par typing effect, files par folder mein udkar jaana, direction par haath wali arrow.
+- Code chhota rakho, sirf HTML/CSS/JS. Koi extra explanation nahi, sirf artifact.
 ${STYLE}`;
 
   $('out').classList.remove('hide');
